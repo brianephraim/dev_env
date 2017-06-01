@@ -1,6 +1,10 @@
 {
   "name": "@defualt/dev_env",
   "version": "0.0.2",
+  "scripts": {
+    "prepublishOnly": "./node_modules/.bin/babel ./ --out-dir ./compiled --ignore compiled,node_modules",
+    "postpublish": "rm -rf ./compiled"
+  },
   "bin": {
     "devenv": "./bin/devenv.js"
   },
