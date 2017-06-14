@@ -1,41 +1,52 @@
 /* eslint-disable no-console */
-
 import { argv } from 'yargs';
 import express from 'express';
 import webpackDevMiddleware from 'webpack-dev-middleware';
 import webpack from 'webpack';
 import url from 'url';
-import generateWebpackConfig from './generate.webpack.config.babel';
-
+import generateWebpackConfig from './webpack.config.babel';
+import parseStatsForDependencyProblems from './parseStatsForDependencyProblems';
 import testSetup from './testSetup';
 
 const env = argv.env;
 
 const doWebpack = true;
-const doTest = env !== 'build';
 
-if (!doWebpack && doTest) {
+if (env === 'test') {
   testSetup();
-}
-
-
-if (doWebpack) {
+} else if (doWebpack) {
   const app = express();
   const port = 3000;
-  const config = generateWebpackConfig(argv);
+  const config = generateWebpackConfig;
   const compiler = webpack(config);
-  if (env === 'build' || env === 'node') {
-    compiler.run((err/* , stats*/) => {
+  if (env === 'build') {
+    compiler.run((err, stats) => {
+      parseStatsForDependencyProblems(stats);
+      // fs.writeFileSync(process.cwd() + '/_webpack_stats.json',JSON.stringify(stats, null, 2));
+
       if (err) {
-        console.warn(err);
-      } else {
-        // console.log(stats);
+        console.error(err.stack || err);
+        if (err.details) {
+          console.error(err.details);
+        }
+        return;
+      }
+
+      const info = stats.toJson();
+
+      if (stats.hasErrors()) {
+        info.errors.forEach((e) => {
+          console.error('\x1b[31m', e, '\x1b[0m');
+        });
+      }
+
+      if (stats.hasWarnings()) {
+        info.warnings.forEach((w) => {
+          console.warn('\x1b[33m', w, '\x1b[0m');
+        });
       }
     });
   } else {
-    if (doTest) {
-      testSetup();
-    }
     app.use((req, res, next) => {
       const urlSplit = url.parse(req.url).pathname.split('/');
       const lastPart = urlSplit[urlSplit.length - 1];
@@ -48,12 +59,18 @@ if (doWebpack) {
     });
 
     console.info('🔷 Starting webpack ...');
-    app.use(webpackDevMiddleware(compiler, {
+
+    const activeWebpackDevMiddleware = webpackDevMiddleware(compiler, {
       publicPath: config.output.publicPath,
       stats: {
         colors: true,
       },
-    }));
+    });
+    activeWebpackDevMiddleware.waitUntilValid((stats) => {
+      parseStatsForDependencyProblems(stats);
+    });
+
+    app.use(activeWebpackDevMiddleware);
 
     app.use('/images', express.static('packages/images'));
     app.use('/fonts', express.static('packages/fonts'));
