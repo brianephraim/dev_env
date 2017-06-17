@@ -4,24 +4,29 @@ import express from 'express';
 import webpackDevMiddleware from 'webpack-dev-middleware';
 import webpack from 'webpack';
 import url from 'url';
+import shellCommand from './pre-webpack/shell-command';
 import generateWebpackConfig from './webpack.config.babel';
 import parseStatsForDependencyProblems from './parseStatsForDependencyProblems';
 import testSetup from './testSetup';
 
 const env = argv.env;
+const item = argv.item;
+console.log(argv)
 
 const doWebpack = true;
-
-if (env === 'test') {
+if (item) {
+  console.log('aaaa', argv);
+  shellCommand(`(cd ./packages/${item} && npm run start)`);
+} else if (env === 'test') {
   testSetup();
 } else if (doWebpack) {
   const app = express();
   const port = 3000;
   const config = generateWebpackConfig;
   const compiler = webpack(config);
-  if (env === 'build') {
+  if (env === 'build' || argv.entry) {
     compiler.run((err, stats) => {
-      parseStatsForDependencyProblems(stats);
+      // parseStatsForDependencyProblems(stats);
       // fs.writeFileSync(process.cwd() + '/_webpack_stats.json',JSON.stringify(stats, null, 2));
 
       if (err) {

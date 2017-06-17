@@ -28,7 +28,7 @@
     Only application files will be bundled.
     node_modules and node built-in requires will not be bundled.
 */
-
+import path from 'path';
 import { argv } from 'yargs';
 import StringReplacePlugin from 'string-replace-webpack-plugin';
 import webpack from 'webpack';
@@ -40,16 +40,33 @@ import globby from 'globby';
 import fs from 'fs-extra';
 import webpackConfigResolve from './webpack-config-resolve';
 
+
 const devHtmlPath = './index.html';
+
+console.log(argv);
+
+// console.log(process.cwd());
+// // console.log(argv);
+// console.log({
+//   entry: path.resolve(process.cwd(), argv.entry),
+//   output: path.resolve(process.cwd(), argv.output),
+// });
 
 function generateConfigJson() {
   const env = argv.env;
 
-  const dirRoot = argv.dirroot || process.cwd();
+  const isCommandLine = argv.entry;
+
+  let dirRoot = argv.dirroot || process.cwd();
+
+  if (argv.entry) {
+    dirRoot = '/Users/brianephraim/Sites/monorepo/packages/dev_env';
+  }
 
   const packageJson = fs.readJsonSync(`${dirRoot}/package.json`);
 
-  const bundleForNode = packageJson.bundleForNode;
+  const bundleForNode = packageJson.bundleForNode || isCommandLine;
+  const isBuild = env === 'build' || isCommandLine;
 
   let username = null;
   if (packageJson.repository && packageJson.repository.url) {
@@ -79,9 +96,8 @@ function generateConfigJson() {
       use: [moreLoaderParams.fallback, ...moreLoaderParams.use],
     };
   }
-
   const outputFiles = {};
-  if (env === 'build') {
+  if (isBuild) {
     outputFiles.library = `dist/${libraryNameReduced}`;
     outputFiles.libraryMin = `dist/${libraryNameReduced}.min`;
     outputFiles.demo = 'dist/demo/index';
@@ -109,12 +125,13 @@ function generateConfigJson() {
       `${dirRoot}/packages/MainApp/MainApp.js`,
     ]),
   };
-  const entry = Object.keys(entryFiles).reduce((accum, entryName) => {
+  let entry = Object.keys(entryFiles).reduce((accum, entryName) => {
     if (entryFiles[entryName].length) {
       accum[entryName] = entryFiles[entryName];
     }
     return accum;
   }, {});
+  
 
   function moveModify(source, modifyPath, modifyContent) {
     let sources = [];
@@ -143,39 +160,41 @@ function generateConfigJson() {
     });
   }
 
-  if (env === 'build') {
-    moveModify(['src/import-examples/**/!(webpack.config).*', 'src/tonicExample.js'], (filePath) => {
-      return filePath.replace('src/', './');
-    },
-    (content) => {
-      return content.replace(/LIBRARYNAME/g, libraryName);
-    });
+  if (!isCommandLine) {
+    if (isBuild) {
+      moveModify(['src/import-examples/**/!(webpack.config).*', 'src/tonicExample.js'], (filePath) => {
+        return filePath.replace('src/', './');
+      },
+      (content) => {
+        return content.replace(/LIBRARYNAME/g, libraryName);
+      });
 
-    registerPlugin('UglifyJsPlugin', new webpack.optimize.UglifyJsPlugin({
-      include: /\.min\.js$/,
-      minimize: true,
-    }));
+      registerPlugin('UglifyJsPlugin', new webpack.optimize.UglifyJsPlugin({
+        include: /\.min\.js$/,
+        minimize: true,
+      }));
 
-    const templatePath = 'src/demo/index.ejs';
-    const htmlTemplateExists = fs.existsSync(templatePath);
-    const indexHtmlSettings = {
-      chunks: [outputFiles.demo],
-      ...(
-        htmlTemplateExists ? { template: templatePath } : {}
-      ),
-      title: 'afasdfasdfasd',
-      username,
-      libraryName,
-    };
-    registerPlugin('demoIndex-HtmlWebpackPlugin', new HtmlWebpackPlugin({
-      filename: './dist/demo/index.html',
-      ...indexHtmlSettings,
-    }));
-  } else {
-    registerPlugin('demoDevIndex-HtmlWebpackPlugin', new HtmlWebpackPlugin({
-      chunks: [outputFiles.demo],
-      filename: devHtmlPath,
-    }));
+      const templatePath = 'src/demo/index.ejs';
+      const htmlTemplateExists = fs.existsSync(templatePath);
+      const indexHtmlSettings = {
+        chunks: [outputFiles.demo],
+        ...(
+          htmlTemplateExists ? { template: templatePath } : {}
+        ),
+        title: 'afasdfasdfasd',
+        username,
+        libraryName,
+      };
+      registerPlugin('demoIndex-HtmlWebpackPlugin', new HtmlWebpackPlugin({
+        filename: './dist/demo/index.html',
+        ...indexHtmlSettings,
+      }));
+    } else {
+      registerPlugin('demoDevIndex-HtmlWebpackPlugin', new HtmlWebpackPlugin({
+        chunks: [outputFiles.demo],
+        filename: devHtmlPath,
+      }));
+    }
   }
   registerPlugin('StringReplacePlugin', new StringReplacePlugin());
 
@@ -188,20 +207,71 @@ function generateConfigJson() {
     },
   }));
 
-  const config = {
-    entry,
-    devtool: env === 'build' ? 'source-map' : 'eval',
-    output: {
-      path: `${dirRoot}`,
-      filename: '[name].js',
+  let output = {
+    path: `${dirRoot}`,
+    filename: '[name].js',
+    library: libraryName,
+    libraryTarget: 'umd',
+    umdNamedDefine: true,
+    publicPath: '/',
+    // publicPath: '/assets/',
+  };
+
+  if (isCommandLine) {
+    entry = {
+      // main: './webpack.start.js',
+      // main: '/Users/brianephraim/Sites/monorepo/packages/mono-to-multirepo/mono-to-multirepo.js',
+      main: argv.entry,
+      // main: path.resolve(process.cwd(), argv.entry),
+    };
+
+    // output = '/Users/brianephraim/Sites/monorepo/packages/dev_env/wepback.start.temp.js';
+    // output = path.resolve(process.cwd(), argv.output);
+    // output = output.split('/');
+    // output = {
+    //   filename: output.pop(),
+    //   path: output.join('/'),
+    //   library: libraryName,
+    //   libraryTarget: 'umd',
+    //   umdNamedDefine: true,
+    //   publicPath: '/',
+    // };
+
+    // output = {
+    //   filename: 'wepback.start.temp.js',
+    //   path: '/Users/brianephraim/Sites/monorepo/packages/dev_env/',
+    //   library: libraryName,
+    //   libraryTarget: 'umd',
+    //   umdNamedDefine: true,
+    //   publicPath: '/',
+    // };
+
+    output = argv.output;
+    output = output.split('/');
+
+    output = {
+      filename: output.pop(),
+      path: output.join('/'),
       library: libraryName,
       libraryTarget: 'umd',
       umdNamedDefine: true,
       publicPath: '/',
-      // publicPath: '/assets/',
-    },
+    };
+
+
+    // /Users/brianephraim/Sites/monorepo/packages/mono-to-multirepo/mono-to-multirepo.js
+  }
+
+  const config = {
+    entry,
+    output,
+    devtool: isBuild ? 'source-map' : 'cheap-module-eval-source-map',
     module: {
       rules: [
+        // Why is this here: https://github.com/Reactive-Extensions/RxJS/issues/1117
+        // Issue only appeard when webpack run on command line for Node bundle
+        { test: /rx\.lite\.aggregates\.js/, use: 'imports-loader?define=>false' },
+
         {
           test: /\.(js)?$/,
           loader: 'babel-loader',
@@ -230,14 +300,14 @@ function generateConfigJson() {
         },
         {
           test: /\.css$/,
-          ...conditionalExtractTextLoaderCss(env === 'build', {
+          ...conditionalExtractTextLoaderCss(isBuild, {
             fallback: 'style-loader',
             use: ['css-loader'],
           }),
         },
         {
           test: /\.scss$/,
-          ...conditionalExtractTextLoaderCss(env === 'build', {
+          ...conditionalExtractTextLoaderCss(isBuild, {
             fallback: 'style-loader',
             use: [
               'css-loader?sourceMap',
@@ -286,7 +356,18 @@ function generateConfigJson() {
           __dirname: false,
           __filename: false,
         },
-        externals: [nodeExternals({ modulesFromFile: true })],
+        externals: [
+          nodeExternals({ modulesFromFile: true })
+          // ...(argv.entry ? {
+          //   'yargs': 'commonjs yargs',
+          //   'socket.io': 'commonjs socket.io',
+          //   'webpack': 'commonjs webpack',
+          //   'html-webpack-plugin': 'commonjs html-webpack-plugin',
+          //   'any-promise': 'commonjs any-promise',
+          //   'natives': 'commonjs natives',
+          //    'chokidar': 'commonjs chokidar'
+          // }: )
+        ],
       } : {}
     ),
   };
